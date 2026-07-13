@@ -16,6 +16,7 @@ permissions:
 env:
   GODOT_VERSION: "4.7"
   DOTNET_VERSION: "10.0.x"
+  PT_BUILD_TARGET: "MOBILE"
 
 jobs:
   build-stable-apk:
@@ -37,6 +38,23 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+
+      - name: Create APK signing key
+        run: |
+          KEYSTORE="$RUNNER_TEMP/polytoria-release.keystore"
+          keytool -genkeypair -noprompt \
+            -keystore "$KEYSTORE" \
+            -storetype JKS \
+            -storepass polytoria \
+            -keypass polytoria \
+            -alias polytoria \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Polytoria Unofficial Android Build, OU=CI, O=qaustria, C=TR"
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=polytoria" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=polytoria" >> "$GITHUB_ENV"
 
       - name: Cache Android SDK
         id: cache-android
