@@ -1,0 +1,118 @@
+name: Build Stable APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Polytoria release tag (e.g. 2.0.19). Leave empty for latest.'
+        required: false
+        type: string
+  schedule:
+    - cron: '0 12 * * 1'
+
+env:
+  GODOT_VERSION: 4.4.1
+  DOTNET_VERSION: '9.0.x'
+
+jobs:
+  build-stable-apk:
+    runs-on: ubuntu-latest
+    name: Build Stable APK
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk wget unzip
+          mkdir -p ~/android-sdk/cmdline-tools
+          cd ~/android-sdk/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip
+          mv cmdline-tools latest
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" "ndk;27.0.12077973" > /dev/null 2>&1
+
+      - name: Download Godot
+        run: |
+          GODOT_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          wget -q "$GODOT_URL" -O godot.zip
+          unzip -q godot.zip
+          chmod +x Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+
+      - name: Download Export Templates
+        run: |
+          TEMPLATES_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          wget -q "$TEMPLATES_URL" -O export_templates.tpz
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          unzip -q export_templates.tpz -d /tmp/templates
+          mv /tmp/templates/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+
+      - name: Clone Polytoria
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(curl -s https://api.github.com/repos/Polytoria/polytoria-game/releases/latest | grep '"tag_name"' | head -1 | cut -d '"' -f 4)
+          fi
+          echo "Building version: $TAG"
+          git clone --depth 1 --branch "$TAG" https://github.com/Polytoria/polytoria-game.git upstream
+          echo "TAG=$TAG" >> $GITHUB_ENV
+
+      - name: Setup Export Presets
+        run: cp Polytonia/export_presets.cfg upstream/Polytoria/export_presets.cfg
+
+      - name: Build .NET Project
+        run: dotnet build Polytonia.sln -c Release
+        working-directory: upstream
+
+      - name: Export Android APK
+        run: |
+          mkdir -p build
+          godot --headless --path Polytonia --export-release "Client Android APK" build/polytoria-${TAG}-stable.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: polytoria-${{ env.TAG }}-stable
+          path: build/*.apk
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.tag != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: "Polytoria ${{ env.TAG }} - Android APK"
+          body: |
+            ## Polytoria ${{ env.TAG }} - Android APK
+
+            Automated build from [Polytoria ${{ env.TAG }}](https://github.com/Polytoria/polytoria-game/releases/tag/${{ env.TAG }})
+
+            ### Installation
+            1. Download the APK below
+            2. Enable "Install from unknown sources" on your Android device
+            3. Open the APK to install
+
+            **Note:** This is an unofficial automated build. For official releases visit [polytoria.com](https://polytoria.com).
+          files: build/*.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

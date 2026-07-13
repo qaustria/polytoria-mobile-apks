@@ -1,0 +1,140 @@
+name: Build Dev APK
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 12 * * *'
+
+env:
+  GODOT_VERSION: 4.4.1
+  DOTNET_VERSION: '9.0.x'
+
+jobs:
+  build-dev-apk:
+    runs-on: ubuntu-latest
+    name: Build Dev APK
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk wget unzip
+          mkdir -p ~/android-sdk/cmdline-tools
+          cd ~/android-sdk/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          unzip -q cmdline-tools.zip
+          mv cmdline-tools latest
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" "ndk;27.0.12077973" > /dev/null 2>&1
+
+      - name: Download Godot
+        run: |
+          GODOT_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          wget -q "$GODOT_URL" -O godot.zip
+          unzip -q godot.zip
+          chmod +x Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+
+      - name: Download Export Templates
+        run: |
+          TEMPLATES_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          wget -q "$TEMPLATES_URL" -O export_templates.tpz
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          unzip -q export_templates.tpz -d /tmp/templates
+          mv /tmp/templates/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+
+      - name: Clone Polytoria (latest main)
+        run: |
+          git clone --depth 1 https://github.com/Polytoria/polytoria-game.git upstream
+          cd upstream
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_DATE=$(git log -1 --format=%cd --date=short)
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
+          echo "COMMIT_DATE=$COMMIT_DATE" >> $GITHUB_ENV
+          echo "Polytoria commit: $SHORT_SHA ($COMMIT_DATE)"
+
+      - name: Setup Export Presets
+        run: cp Polytonia/export_presets.cfg upstream/Polytoria/export_presets.cfg
+
+      - name: Build .NET Project
+        run: dotnet build Polytonia.sln -c Release
+        working-directory: upstream
+
+      - name: Export Android APK
+        run: |
+          mkdir -p build
+          godot --headless --path Polytoria --export-release "Client Android APK" build/polytoria-dev-${SHORT_SHA}.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: polytoria-dev-${{ env.SHORT_SHA }}
+          path: build/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Delete old dev release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            for (const release of releases.data) {
+              if (release.tag_name === 'dev-latest') {
+                await github.rest.repos.deleteRelease({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: release.id,
+                });
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `tags/dev-latest`,
+                }).catch(() => {});
+                break;
+              }
+            }
+
+      - name: Create/Update dev release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev-latest
+          name: "Polytoria Dev Build"
+          prerelease: true
+          body: |
+            ## Polytoria Dev Build (Latest)
+
+            Automatically built from the latest [main branch](https://github.com/Polytoria/polytoria-game) commits.
+
+            **Built from:** `${{ env.SHORT_SHA }}` (${{ env.COMMIT_DATE }})
+
+            ### Installation
+            1. Download the APK below
+            2. Enable "Install from unknown sources" on your Android device
+            3. Open the APK to install
+
+            **Note:** This is an unofficial automated build from the development branch. It may be unstable. For stable releases visit [Releases](https://github.com/qaustria/polytoria-mobile-apks/releases).
+          files: build/*.apk
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
