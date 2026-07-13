@@ -99,6 +99,11 @@ jobs:
       - name: Setup Export Presets
         run: cp Polytoria/export_presets.cfg upstream/Polytoria/export_presets.cfg
 
+      - name: Install Android Build Template
+        run: |
+          cp -r ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/android/ upstream/Polytoria/android/
+          echo "Android build template installed"
+
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
