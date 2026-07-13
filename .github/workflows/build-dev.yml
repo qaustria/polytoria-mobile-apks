@@ -73,7 +73,7 @@ jobs:
         run: cp Polytoria/export_presets.cfg upstream/Polytoria/export_presets.cfg
 
       - name: Build .NET Project
-        run: dotnet build Polytoria.sln -c Release
+        run: dotnet build Polytoria.sln -c ExportRelease
         working-directory: upstream
 
       - name: Export Android APK
