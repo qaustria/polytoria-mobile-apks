@@ -128,11 +128,25 @@ jobs:
         run: dotnet build Polytoria.sln -c ExportRelease
         working-directory: upstream
 
+      - name: Validate Android .NET Publish
+        working-directory: upstream/Polytoria
+        run: |
+          dotnet publish Polytoria.csproj \
+            -c ExportRelease \
+            -r android-arm64 \
+            --self-contained true \
+            -p:GodotTargetPlatform=Android \
+            -p:DebugType=None \
+            -p:DebugSymbols=false \
+            -o "$RUNNER_TEMP/polytoria-dotnet-publish" \
+            -v minimal
+
       - name: Export Android APK
         working-directory: upstream
         run: |
-          mkdir -p build
-          godot --headless --path Polytoria --install-android-build-template --export-release "Client Android APK" "build/polytoria-dev-${SHORT_SHA}.apk"
+          OUTPUT_DIR="$PWD/build"
+          mkdir -p "$OUTPUT_DIR"
+          godot --verbose --headless --path Polytoria --install-android-build-template --export-release "Client Android APK" "$OUTPUT_DIR/polytoria-dev-${SHORT_SHA}.apk"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
