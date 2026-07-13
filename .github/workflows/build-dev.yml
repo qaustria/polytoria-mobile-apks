@@ -48,7 +48,6 @@ jobs:
           GODOT_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
           wget -q "$GODOT_URL" -O godot.zip
           unzip -q godot.zip
-          ls -la
           chmod +x Godot_v${GODOT_VERSION}-stable_linux.x86_64
           sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
 
@@ -71,22 +70,23 @@ jobs:
           echo "Polytoria commit: $SHORT_SHA ($COMMIT_DATE)"
 
       - name: Setup Export Presets
-        run: cp Polytonia/export_presets.cfg upstream/Polytoria/export_presets.cfg
+        run: cp Polytoria/export_presets.cfg upstream/Polytoria/export_presets.cfg
 
       - name: Build .NET Project
-        run: dotnet build Polytonia.sln -c Release
+        run: dotnet build Polytoria.sln -c Release
         working-directory: upstream
 
       - name: Export Android APK
+        working-directory: upstream
         run: |
           mkdir -p build
-          godot --headless --path Polytonia --export-release "Client Android APK" build/polytoria-dev-${SHORT_SHA}.apk
+          godot --headless --path Polytoria --export-release "Client Android APK" build/polytoria-dev-${SHORT_SHA}.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: polytoria-dev-${{ env.SHORT_SHA }}
-          path: build/*.apk
+          path: upstream/build/*.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -133,7 +133,7 @@ jobs:
             3. Open the APK to install
 
             **Note:** This is an unofficial automated build from the development branch. It may be unstable. For stable releases visit [Releases](https://github.com/qaustria/polytoria-mobile-apks/releases).
-          files: build/*.apk
+          files: upstream/build/*.apk
           make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

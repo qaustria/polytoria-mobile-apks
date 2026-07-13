@@ -75,22 +75,23 @@ jobs:
           echo "TAG=$TAG" >> $GITHUB_ENV
 
       - name: Setup Export Presets
-        run: cp Polytonia/export_presets.cfg upstream/Polytoria/export_presets.cfg
+        run: cp Polytoria/export_presets.cfg upstream/Polytoria/export_presets.cfg
 
       - name: Build .NET Project
-        run: dotnet build Polytonia.sln -c Release
+        run: dotnet build Polytoria.sln -c Release
         working-directory: upstream
 
       - name: Export Android APK
+        working-directory: upstream
         run: |
           mkdir -p build
-          godot --headless --path Polytonia --export-release "Client Android APK" build/polytoria-${TAG}-stable.apk
+          godot --headless --path Polytoria --export-release "Client Android APK" build/polytoria-${TAG}-stable.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: polytoria-${{ env.TAG }}-stable
-          path: build/*.apk
+          path: upstream/build/*.apk
           if-no-files-found: error
 
       - name: Create GitHub Release
@@ -110,7 +111,7 @@ jobs:
             3. Open the APK to install
 
             **Note:** This is an unofficial automated build. For official releases visit [polytoria.com](https://polytoria.com).
-          files: build/*.apk
+          files: upstream/build/*.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
